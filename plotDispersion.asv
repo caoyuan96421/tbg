@@ -1,0 +1,14 @@
+function plotDispersion(D)
+%UNTITLED Summary of this function goes here
+%   Detailed explanation goes here
+
+[X,Y] = meshgrid(D.kx, D.ky);
+
+figure;
+axis equal tight;
+ho
+for i=1:size(D.E,3)
+    surf(X,Y, D.E(:,:,i)');
+end
+
+end
