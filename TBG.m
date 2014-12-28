@@ -9,7 +9,8 @@ classdef TBG < handle
         a0=1;
         c0=3;
         a;
-        A;              % Superlattice lattice vector
+        A;              % Superlattice lattice vectors
+        B;              % Reciprocal lattice vectors
         p;         % p(:,:,1) and p(:,:,2) are the coordinates lattice points on layer 1 and 2 respectively
         c;         % c(:,:,1), c(:,:,2) are atom coordinates on layer 1 and 2
         hintra;         % Cell array storing adjacent vectors and hopping energy
@@ -26,25 +27,28 @@ classdef TBG < handle
     end
     
     methods
-        function tbg = TBG(a0, c0, n, m)
-            tbg.a0 = a0;
-            tbg.A0 = 4.01*a0;
-            tbg.delta = 0.184*a0;
-            tbg.c0 = c0;
+        function tbg = TBG(n, m)
+            tbg.a0 = 0.142/197;
+            tbg.A0 = 4.01*tbg.a0;
+            tbg.delta = 0.184*tbg.a0;
+            tbg.c0 = 0.335/197;
             tbg.n = n;
             tbg.m = m;
             tbg.theta = acos((n^2+4*m*n+m^2)/(2*(n^2+n*m+m^2)))*sign(n-m);
-            a1 = [1.5; -0.5*sqrt(3)] * a0;
-            a2 = [1.5; 0.5*sqrt(3)] * a0;
+            a1 = [1.5; -0.5*sqrt(3)] * tbg.a0;
+            a2 = [1.5; 0.5*sqrt(3)] * tbg.a0;
             R1 = [cos(tbg.theta/2), -sin(tbg.theta/2); sin(tbg.theta/2), cos(tbg.theta/2)];
             R2 = [cos(tbg.theta/2), sin(tbg.theta/2); -sin(tbg.theta/2), cos(tbg.theta/2)];
             A1 = R1 * ( n*a1 + m*a2);
             A2 = R1 * (-m*a1 + (n+m)*a2);
+            B1 = 2*pi/sum(cross([A1;0],[A2;0]))*cross([A2;0],[0;0;1]);B1 = B1(1:2);
+            B2 = 2*pi/sum(cross([A1;0],[A2;0]))*cross([0;0;1],[A1;0]);B2 = B2(1:2);
             a11 = R1 * a1;
             a21 = R1 * a2;
             a12 = R2 * a1;
             a22 = R2 * a2;
             tbg.A = [A1, A2];
+            tbg.B = [B1, B2];
             tbg.a = [a1, a2];
             
             p1 = find_points(tbg, n, m, a11, a21);
@@ -82,8 +86,13 @@ classdef TBG < handle
             % hop: p*2 array (p is number of neighbors). pos: index of
             % current atom. layer: index of current layer (0 or 1)
             function map(hop, pos, layer1, layer2)
-                H(:, pos+layer1*2*tbg.N, hop(:,1)+layer2*2*tbg.N) = ...
-                    H(:, pos+layer1*2*tbg.N, hop(:,1)+layer2*2*tbg.N) + reshape(exp(1i*(k*hop(:,3:4)')).*repmat(hop(:,2)',NK,1), NK, 1, []);
+                %H(:, pos+layer1*2*tbg.N, hop(:,1)+layer2*2*tbg.N) = ...
+                %    H(:, pos+layer1*2*tbg.N, hop(:,1)+layer2*2*tbg.N) + reshape(exp(1i*(k*hop(:,3:4)')).*repmat(hop(:,2)',NK,1), NK, 1, []);
+                disp([num2str(pos),',',num2str(layer1),',',num2str(layer2)]);
+                for j=1:size(hop,1)
+                    H(:, pos+layer1*2*tbg.N, hop(j,1)+layer2*2*tbg.N) = ...
+                        H(:, pos+layer1*2*tbg.N, hop(j,1)+layer2*2*tbg.N) + exp(1i*(k*hop(j,3:4)'))*hop(j,2);
+                end
             end
             cellfun(@map, tbg.hintra(:,1), num2cell((1:2*tbg.N)'), num2cell(zeros(2*tbg.N,1)), num2cell(zeros(2*tbg.N,1))); % Map intralayer hoppings to the upper-left quadrant of the hamiltonian
             cellfun(@map, tbg.hintra(:,2), num2cell((1:2*tbg.N)'), num2cell(ones(2*tbg.N,1)), num2cell(ones(2*tbg.N,1))); % Map intralayer hoppings to the lower-right quadrant of the hamiltonian
@@ -91,30 +100,67 @@ classdef TBG < handle
             cellfun(@map, tbg.hinter(:,1), num2cell((1:2*tbg.N)'), num2cell(zeros(2*tbg.N,1)), num2cell(ones(2*tbg.N,1))); % Map interlayer hoppings to the upper-right quadrant of the hamiltonian
             cellfun(@map, tbg.hinter(:,2), num2cell((1:2*tbg.N)'), num2cell(ones(2*tbg.N,1)), num2cell(zeros(2*tbg.N,1))); % Map interlayer hoppings to the lower-left quadrant of the hamiltonian
            
-            tbg.H0=H;
-            disp('Hamiltonian Constructed');
+            H = (H + conj(permute(H,[1,3,2])))/2; % Force H to be hermitian, so that the eigen problem can be solved MUCH FASTER
+            %tbg.H0=H;
+            disp('Hamiltonian Constructed and Hermitianized');
             % Now we have the Hamiltonian. Solve it! (for each k)
             E = zeros(NK, 4*tbg.N);
+            %E = zeros(NK, 20);
             for i=1:NK
                 disp(num2str(i));
                 E(i,:) = sort(real(eig(squeeze(H(i,:,:)))));
+                %E(i,:) = sort(real(eigs(sparse(squeeze(H(i,:,:))), 20, 0)));
             end
         end
         
         % Get dispersion in the first Brillouin zone
         function D=getBrillouin(tbg, res)
-            A1 = tbg.A(:,1);
-            A2 = tbg.A(:,2);
-            B1 = 2*pi/sum(cross([A1;0],[A2;0]))*cross([A2;0],[0;0;1]);
-            B2 = 2*pi/sum(cross([A1;0],[A2;0]))*cross([0;0;1],[A1;0]);
+            B1 = tbg.B(:,1);
+            B2 = tbg.B(:,2);
             [px,py] = meshgrid(linspace(0,1,res),linspace(0,1,res));
             kx = px * B1(1) + py * B2(1);
             ky = px * B1(2) + py * B2(2);
             E = tbg.getDispersion(kx,ky);
             D.kx = kx;
             D.ky = ky;
-            D.E = reshape(E, res, res, 4*tbg.N);
+            D.E = reshape(E, res, res, []);
             plotDispersion(D);
+        end
+        
+        % Get dispersion on high symmetrical points and lines
+        function D=getHighSymmetrical(tbg, res, div)
+           B1 = tbg.B(:,1);
+           B2 = tbg.B(:,2);
+           K  = (2/3 * B1 + 1/3 * B2)';
+           Kp = (1/3 * B1 + 2/3 * B2)';
+           Gamma = [0,0];
+           M = (K + Kp) / 2;
+           t=linspace(0,1,res+1)'; t=t(1:end-1);
+           % K -- Gamma
+           kxy = repmat(K, res, 1) + t * (Gamma - K);
+           T = t * norm(Gamma - K);
+           % Gamma -- M
+           kxy = [kxy ; repmat(Gamma, res, 1) + t * (M - Gamma)];
+           T = [T; norm(Gamma - K) + t * norm(M - Gamma)];
+           % M -- Kp
+           kxy = [kxy ; repmat(M, res, 1) + t * (Kp - M)];
+           T = [T; norm(Gamma - K) + norm(M - Gamma) + t * norm(Kp - M)];
+           % Kp
+           kxy = [kxy ; Kp];
+           T = [T; norm(Gamma - K) + norm(M - Gamma) + norm(Kp - M)];
+           
+           kx = kxy(:,1);
+           ky = kxy(:,2);
+           i=1;
+           D.E = zeros(size(kx,1), 4*tbg.N);
+           while i<=size(kx,1)             
+                D.E(i:min(i+div-1,size(kx,1)), :) = tbg.getDispersion(kx(i:min(i+div-1,size(kx,1))), ky(i:min(i+div-1,size(kx,1))));
+                i = i + div;
+           end
+           D.kx = kx;
+           D.ky = ky;
+           D.t = T;
+           plotHighSymmetric(D);
         end
         % find all possible lattice coordinates in a superlattice. Basic
         % idea: In a TBG, the SUPERLATTICE BASE VECTORS corresponds to (n,
