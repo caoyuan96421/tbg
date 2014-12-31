@@ -76,7 +76,7 @@ classdef TBG < handle
             
         end
         
-        function E=getDispersion(tbg, kx, ky)
+        function E=getDispersion(tbg, kx, ky, V)
             NK = numel(kx);              % Number of k points
             kx=kx(:);% reshape different k values to the first dimension
             ky=ky(:);
@@ -99,7 +99,10 @@ classdef TBG < handle
             
             cellfun(@map, tbg.hinter(:,1), num2cell((1:2*tbg.N)'), num2cell(zeros(2*tbg.N,1)), num2cell(ones(2*tbg.N,1))); % Map interlayer hoppings to the upper-right quadrant of the hamiltonian
             cellfun(@map, tbg.hinter(:,2), num2cell((1:2*tbg.N)'), num2cell(ones(2*tbg.N,1)), num2cell(zeros(2*tbg.N,1))); % Map interlayer hoppings to the lower-left quadrant of the hamiltonian
-           
+            
+            for ki=1:NK
+                H(ki,:,:) = H(ki,:,:) + shiftdim(diag([repmat(-V/2,2*tbg.N,1);repmat(V/2,2*tbg.N,1)]),-1);
+            end
             H = (H + conj(permute(H,[1,3,2])))/2; % Force H to be hermitian, so that the eigen problem can be solved MUCH FASTER
             %tbg.H0=H;
             disp('Hamiltonian Constructed and Hermitianized');
@@ -114,13 +117,13 @@ classdef TBG < handle
         end
         
         % Get dispersion in the first Brillouin zone
-        function D=getBrillouin(tbg, res)
+        function D=getBrillouin(tbg, res, V)
             B1 = tbg.B(:,1);
             B2 = tbg.B(:,2);
             [px,py] = meshgrid(linspace(0,1,res),linspace(0,1,res));
             kx = px * B1(1) + py * B2(1);
             ky = px * B1(2) + py * B2(2);
-            E = tbg.getDispersion(kx,ky);
+            E = tbg.getDispersion(kx,ky,V);
             D.kx = kx;
             D.ky = ky;
             D.E = reshape(E, res, res, []);
@@ -128,7 +131,7 @@ classdef TBG < handle
         end
         
         % Get dispersion on high symmetrical points and lines
-        function D=getHighSymmetrical(tbg, res, div)
+        function D=getHighSymmetrical(tbg, res, div, V)
            B1 = tbg.B(:,1);
            B2 = tbg.B(:,2);
            K  = (2/3 * B1 + 1/3 * B2)';
@@ -154,7 +157,7 @@ classdef TBG < handle
            i=1;
            D.E = zeros(size(kx,1), 4*tbg.N);
            while i<=size(kx,1)             
-                D.E(i:min(i+div-1,size(kx,1)), :) = tbg.getDispersion(kx(i:min(i+div-1,size(kx,1))), ky(i:min(i+div-1,size(kx,1))));
+                D.E(i:min(i+div-1,size(kx,1)), :) = tbg.getDispersion(kx(i:min(i+div-1,size(kx,1))), ky(i:min(i+div-1,size(kx,1))), V);
                 i = i + div;
            end
            D.kx = kx;
