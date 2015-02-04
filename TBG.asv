@@ -123,32 +123,22 @@ classdef TBG < handle
             %[px,py] = meshgrid(linspace(0,1,res),linspace(0,1,res));
             %kx = px * B1(1) + py * B2(1);
             %ky = px * B1(2) + py * B2(2);
-            K = 2/3 * [1;0] + 1/3 * [-1/2;sqrt(3)/2];
-            [l,t] = meshgrid(linspace(0,1,res).^1.5,linspace(0,pi/3,floor(res/3)));
-            px = K(1) - sqrt(3)/6 * l .* tan(t);
-            py = K(2) - sqrt(3)/6 * l;
-            %scatter(px(:),py(:));
-            T1 = inv([1, -1/2; 0, sqrt(3)/2]);
-            qx = T1(1,1) * px + T1(1,2) * py;
-            qy = T1(2,1) * px + T1(2,2) * py;
-            %figure
-            %scatter(qx(:),qy(:));
-            T2 = [B1, B2];
-            kx = T2(1,1) * qx + T2(1,2) * qy;
-            ky = T2(2,1) * qx + T2(2,2) * qy;
+            %D.kx = kx;
+            %D.ky = ky;
+            K = 1/3 * B1 + 1/3 * B2;
+            [l,t] = meshgrid(linspace(0,1,res),linspace(0,pi/3,floor(sqrt(3)*res)));
+            px = K(1) - l .* sin(t);
+            
             kx = kx(:);
             ky = ky(:);
-            D.kx = kx;
-            D.ky = ky;
             %E = tbg.getDispersion(kx,ky,V);
             i=1;
-            D.E = zeros(length(kx), 4*tbg.N);
-            while i<=length(kx)
-                D.E(i:min(i+div-1,length(kx)), :) = tbg.getDispersion(kx(i:min(i+div-1,length(kx))), ky(i:min(i+div-1,length(kx))), V);
+            D.E = zeros(res*res, 4*tbg.N);
+            while i<=res*res
+                D.E(i:min(i+div-1,res*res), :) = tbg.getDispersion(kx(i:min(i+div-1,res*res)), ky(i:min(i+div-1,res*res)), V);
                 i = i+div;
             end
-            D.B = tbg.B;
-            %D.E = reshape(D.E, length(kx), []);
+            D.E = reshape(D.E, res, res, []);
             plotDispersion(D);
         end
         
