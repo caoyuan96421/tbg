@@ -5,10 +5,10 @@ function plotDispersion(D)
 
 figure;
 axis tight;
-daspect([1,1,1/300]);
+daspect([1,1,1/2000]);
 hold on
 N=size(D.E,2);
-M=10;
+M=1;
 T = delaunay(D.kx, D.ky);
 T1 = [];
 % Remove zero area triangles due to numerical error
@@ -32,21 +32,22 @@ cm = jet(2*M);
 cc = 0;
 for i=max(N/2-M+1,1):min(N/2+M,N)
     cc = cc + 1;
-    %surf(D.kx, D.ky, D.E(:,:,i), 'FaceColor', 'None', 'EdgeColor','interp');
-    trisurf(T, kx1, ky1, D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, kx1, -ky1, D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, -kx1+B3(1), ky1+B3(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, -kx1+B3(1), -ky1+B3(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, kx2+B1(1), ky2+B1(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, kx2+B1(1), -ky2-B1(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, -kx2+B1(1), ky2+B1(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, -kx2+B1(1), -ky2-B1(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, kx3+B1(1), ky3+B1(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, kx3+B1(1), -ky3-B1(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, -kx3+B1(1), ky3+B1(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
-    trisurf(T, -kx3+B1(1), -ky3-B1(2), D.E(:,i), 'FaceColor', 'None','EdgeColor','interp');
+    %surf(D.kx, D.ky, D.E(:,:,i), 'FaceColor', 'interp', 'EdgeColor','None');
+    trisurf(T, kx1, ky1, D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, kx1, -ky1, D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, -kx1+B3(1), ky1+B3(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, -kx1+B3(1), -ky1+B3(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, kx2+B1(1), ky2+B1(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, kx2+B1(1), -ky2-B1(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, -kx2+B1(1), ky2+B1(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, -kx2+B1(1), -ky2-B1(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, kx3+B1(1), ky3+B1(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, kx3+B1(1), -ky3-B1(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, -kx3+B1(1), ky3+B1(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
+    trisurf(T, -kx3+B1(1), -ky3-B1(2), D.E(:,i), 'FaceColor', 'interp','EdgeColor','None');
 end
 hold off
+camlight;lighting gouraud;
 view(3)
 
 end

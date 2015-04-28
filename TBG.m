@@ -62,7 +62,7 @@ classdef TBG < handle
             
             tbg.N = n^2+m^2+n*m;
             T = inv(tbg.A); % Transformation from real coordinates to lattice coordinates
-            c1 = [tbg.p(:,:,1) + 1/3 * repmat((a11 + a21)',tbg.N,1);tbg.p(:,:,1) - 1/3 * repmat((a11 + a21)',tbg.N,1)]; % Real coordinates of atomes in layer 1
+            c1 = [tbg.p(:,:,1) + 1/3 * repmat((a11 + a21)',tbg.N,1);tbg.p(:,:,1) - 1/3 * repmat((a11 + a21)',tbg.N,1)]; % Real coordinates of atoms in layer 1
             c2 = [tbg.p(:,:,2);tbg.p(:,:,2) - 1/3 * repmat((a12 + a22)',tbg.N,1)]; % and layer 2 (Bernal-stacked when theta=0)
             C1 = mod(c1*T', 1); % Transform to lattice coordinates and move everything back to the unit cell
             C2 = mod(c2*T', 1);
@@ -125,19 +125,15 @@ classdef TBG < handle
             %ky = px * B1(2) + py * B2(2);
             K = 2/3 * [1;0] + 1/3 * [-1/2;sqrt(3)/2];
             [l,t] = meshgrid(linspace(0,1,res).^1.5,linspace(0,pi/3,floor(res/3)));
-            px = K(1) - sqrt(3)/6 * l .* tan(t);
-            py = K(2) - sqrt(3)/6 * l;
+            ppx = K(1) - sqrt(3)/6 * l .* tan(t);
+            ppy = K(2) - sqrt(3)/6 * l;
+            pp = unique([ppx(:), ppy(:)],'rows');
             %scatter(px(:),py(:));
             T1 = inv([1, -1/2; 0, sqrt(3)/2]);
-            qx = T1(1,1) * px + T1(1,2) * py;
-            qy = T1(2,1) * px + T1(2,2) * py;
-            %figure
-            %scatter(qx(:),qy(:));
             T2 = [B1, B2];
-            kx = T2(1,1) * qx + T2(1,2) * qy;
-            ky = T2(2,1) * qx + T2(2,2) * qy;
-            kx = kx(:);
-            ky = ky(:);
+            k = T2 * T1 * pp';
+            kx = k(1,:)';
+            ky = k(2,:)';
             D.kx = kx;
             D.ky = ky;
             %E = tbg.getDispersion(kx,ky,V);
@@ -311,6 +307,7 @@ classdef TBG < handle
 %             hold off
             figure
             axis equal tight
+            title 'Lattice Positions'
             hold on
             plot([0; t1(1)], [0; t1(2)], 'g', 'LineWidth', 1.5);
             plot([0; t2(1)], [0; t2(2)], 'g', 'LineWidth', 1.5);
@@ -321,6 +318,7 @@ classdef TBG < handle
             hold off;
             figure
             axis equal tight
+            title 'Atom Positions'
             hold on
             plot([0; t1(1)], [0; t1(2)], 'g', 'LineWidth', 1.5);
             plot([0; t2(1)], [0; t2(2)], 'g', 'LineWidth', 1.5);
@@ -330,11 +328,33 @@ classdef TBG < handle
             scatter3(tbg.c(:,1,2), tbg.c(:,2,2),repmat(tbg.c0,tbg.N*2,1),36, 'blue');
             hold off;
             
-            TBG.plotadj(tbg.c(:,:,1),tbg.c(:,:,1),tbg.hintra(:,1),0,'Layer 1 intra');
-            TBG.plotadj(tbg.c(:,:,2),tbg.c(:,:,2),tbg.hintra(:,2),0,'Layer 2 intra');
-            TBG.plotadj(tbg.c(:,:,1),tbg.c(:,:,2),tbg.hinter(:,1),1,'Layer 1 -> 2 inter');
-            TBG.plotadj(tbg.c(:,:,2),tbg.c(:,:,1),tbg.hinter(:,2),1,'Layer 2 -> 1 inter');
+            %TBG.plotadj(tbg.c(:,:,1),tbg.c(:,:,1),tbg.hintra(:,1),0,'Layer 1 intra');
+            %TBG.plotadj(tbg.c(:,:,2),tbg.c(:,:,2),tbg.hintra(:,2),0,'Layer 2 intra');
+            %TBG.plotadj(tbg.c(:,:,1),tbg.c(:,:,2),tbg.hinter(:,1),1,'Layer 1 -> 2 inter');
+            %TBG.plotadj(tbg.c(:,:,2),tbg.c(:,:,1),tbg.hinter(:,2),1,'Layer 2 -> 1 inter');
             
+            figure
+            title 'Brillouin Zone'
+            hold on
+            axis equal tight
+            K1=K(tbg.a0,tbg.theta/2);
+            K2=K(tbg.a0,-tbg.theta/2);
+            for i=1:6
+                K1n=[0.5,-0.5*sqrt(3); 0.5*sqrt(3), 0.5]*K1;
+                K2n=[0.5,-0.5*sqrt(3); 0.5*sqrt(3), 0.5]*K2;
+                plot([K1(1),K1n(1)],[K1(2),K1n(2)],'r');
+                plot([K2(1),K2n(1)],[K2(2),K2n(2)],'b');
+                K1=K1n;
+                K2=K2n;
+            end
+            kc=K(tbg.a0,tbg.theta/2)-tbg.B(:,1)*2/3-tbg.B(:,2)/3;
+            Ks=tbg.B(:,1)*2/3+tbg.B(:,2)/3;
+            for i=1:6
+                Ksn=[0.5,-0.5*sqrt(3); 0.5*sqrt(3), 0.5]*Ks;
+                plot([Ks(1)+kc(1),Ksn(1)+kc(1)],[Ks(2)+kc(2),Ksn(2)+kc(2)],'g','LineWidth',1.5);
+                Ks=Ksn;
+            end
+            hold off
         end
     end
     methods(Static)
