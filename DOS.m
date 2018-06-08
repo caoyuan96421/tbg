@@ -12,7 +12,7 @@ highband = min(N/2+M, N);
 Emin = min(min(D.E(:,lowband:highband)));
 Emax = max(max(D.E(:,lowband:highband)));
 Ebin = zeros(res,1);
-deltaE = (Emax - Emin)/(res-1);
+deltaE = (Emax - Emin)/res;
 T = D.t;
 
 for i=1:size(T,1)
@@ -37,7 +37,7 @@ for i=1:size(T,1)
         
     end
 end
-DOS.E = linspace(Emin,Emax,res);
+DOS.E = Emin+deltaE/2 : deltaE : Emax-deltaE/2;
 DOS.N = Ebin;
 plot(DOS.E, DOS.N);
 end

@@ -63,14 +63,14 @@ classdef TBG < handle
             tbg.N = n^2+m^2+n*m;
             T = inv(tbg.A); % Transformation from real coordinates to lattice coordinates
             c1 = [tbg.p(:,:,1) + 1/3 * repmat((a11 + a21)',tbg.N,1);tbg.p(:,:,1) - 1/3 * repmat((a11 + a21)',tbg.N,1)]; % Real coordinates of atoms in layer 1
-            c2 = [tbg.p(:,:,2);tbg.p(:,:,2) - 1/3 * repmat((a12 + a22)',tbg.N,1)]; % and layer 2 (Bernal-stacked when theta=0)
+%             c2 = [tbg.p(:,:,2);tbg.p(:,:,2) - 1/3 * repmat((a12 + a22)',tbg.N,1)]; % and layer 2 (Bernal-stacked when theta=0)
+            c2 = [tbg.p(:,:,2) + 1/3 * repmat((a12 + a22)',tbg.N,1);tbg.p(:,:,2) - 1/3 * repmat((a12 + a22)',tbg.N,1)]; % and layer 2 (Bernal-stacked when theta=0)
             C1 = mod(c1*T', 1); % Transform to lattice coordinates and move everything back to the unit cell
             C2 = mod(c2*T', 1);
             tbg.c(:,:,1) = C1*tbg.A'; % Transform back to real coordinates
             tbg.c(:,:,2) = C2*tbg.A';
             
-            varargin=cell2mat(varargin);
-            if isempty(varargin) || varargin(1)
+            if nargin==2 || varargin{1}
                 calcHopping(tbg);
             end
             
@@ -81,18 +81,27 @@ classdef TBG < handle
             
         end
         
-        function E=getDispersion(tbg, kx, ky, V)
+        function [E, P]=getDispersion(tbg, kx, ky, V1, V2)
             NK = numel(kx);              % Number of k points
             kx=kx(:);% reshape different k values to the first dimension
             ky=ky(:);
             k=[kx,ky];
-            if V~=0
+            if V1~=0
                 % add external potential
-                H=repmat(shiftdim(diag([repmat(-V/2,2*tbg.N,1);repmat(V/2,2*tbg.N,1)]),-1),NK,1,1);
+                H=repmat(shiftdim(diag([repmat(-V1/2,2*tbg.N,1);repmat(V1/2,2*tbg.N,1)]),-1),[NK,1,1]);
             else
                 H=zeros(NK, 4*tbg.N, 4*tbg.N);
             end
-            H=single(H); % Truncate precision to save memory
+            if(V2~=0)
+                % V2 adds a asymmetry to the sublattice
+                
+                % Use this for adding the same amount to both layers
+                %H=H + repmat(shiftdim(diag([repmat(-V2/2,tbg.N,1);repmat(V2/2,tbg.N,1);repmat(-V2/2,tbg.N,1);repmat(V2/2,tbg.N,1)]),-1),[NK,1,1]);
+                
+                % Use this to add only to one layer, i.e. graphene/h-BN
+                H=H + repmat(shiftdim(diag([repmat(-V2/2,tbg.N,1);repmat(V2/2,tbg.N,1);zeros(tbg.N,1);zeros(tbg.N,1)]),-1),[NK,1,1]);
+            end
+            H=double(H); % Truncate precision to save memory
             
             % hop: p*2 array (p is number of neighbors). pos: index of
             % current atom. layer: index of current layer (0 or 1)
@@ -118,19 +127,29 @@ classdef TBG < handle
             %tbg.H0=H;
             disp('Hamiltonian Constructed and Hermitianized');
             % Now we have the Hamiltonian. Solve it! (for each k)
-            E = single(zeros(NK, 4*tbg.N));
+            E = double(zeros(NK, 4*tbg.N));
+            P = double(zeros(NK, 4*tbg.N, 4*tbg.N));
             %E = zeros(NK, 20);
             for i=1:NK
                 starttime=datetime;
                 fprintf('%d start...',i);
-                E(i,:) = sort(real(eig(squeeze(H(i,:,:)))));
+                [V1,D]=eig(squeeze(H(i,:,:)));
+                [E(i,:), I] = sort(real(diag(D)));
+                P(i,:,:) = V1(:, I);
                 fprintf('ended in');
                 disp(datetime-starttime);
             end
         end
         
+        % Get eigenvalue and eigen state at a specified k point
+        % Input is fraction of reciprocal lattice vector
+        function D=getState(tbg, skx, sky, V1, V2)
+            K = tbg.B(:,1) * skx + tbg.B(:,2) * sky;
+            [D.E, D.P] = tbg.getDispersion(K(1), K(2), V1, V2);
+        end
+        
         % Get dispersion in the first Brillouin zone
-        function D=getBrillouin(tbg, res, div, V)
+        function D=getBrillouin(tbg, res, div, V1, V2, saveState)
             B1 = tbg.B(:,1);
             B2 = tbg.B(:,2);
 %             [px,py] = meshgrid(linspace(0,1,res),linspace(0,1,res));
@@ -139,10 +158,23 @@ classdef TBG < handle
 %             D.kx = kx;
 %             D.ky = ky;
 %             D.E = tbg.getDispersion(kx,ky,V);
+            
             K = 2/3 * [1;0] + 1/3 * [-1/2;sqrt(3)/2];
-            pv=[K,[0;0],[0.5;0],K]';
-            fh=@(p,a) 0.5/res+5/res*(sqrt(sum((p-repmat(K',[size(p,1),1])).^2,2)));
-            [pt,tri]=distmesh2d(@dpoly,fh,0.5/res, [0,0;K'], pv, pv);
+            Kp = 1/3 * [1;0] + 2/3 * [-1/2;sqrt(3)/2];
+            %pv=[K,[0;0],[0.5;0],K]';
+            %pv=[[0;0],[1;0],[0.5;sqrt(3)/2],[-0.5;sqrt(3)/2],[0;0]]';
+            pv=[K,Kp,[-K(1);K(2)],-K,-Kp,[K(1);-K(2)],K]';
+            %fh=@(p,a) min(min(0.5/res+5/res*abs(dcircle(p,K(1),K(2),0)),0.5/res+5/res*abs(dcircle(p,Kp(1),Kp(2),0))), 5/res);
+            fh=@(p,a) min(min(min(min(min(min(min(...
+                    0.5/res+5/res*abs(dcircle(p,K(1),K(2),0)),...
+                    0.5/res+5/res*abs(dcircle(p,Kp(1),Kp(2),0))),...
+                    0.5/res+5/res*abs(dcircle(p,-K(1),K(2),0))),...
+                    0.5/res+5/res*abs(dcircle(p,-K(1),-K(2),0))),...
+                    0.5/res+5/res*abs(dcircle(p,-Kp(1),-Kp(2),0))),...
+                    0.5/res+5/res*abs(dcircle(p,K(1),-K(2),0))),...
+                    0.5/res+5/res*abs(dcircle(p,0,0,0))),...
+                    5/res);
+            [pt,tri]=distmesh2d(@dpoly,fh,0.5/res, [-0.5,-sqrt(3)/3;0.5,sqrt(3)/3], pv, pv);
             T1 = [1, -1/2; 0, sqrt(3)/2];
             T2 = [B1, B2];
             k = T2 / T1 * pt';
@@ -150,15 +182,27 @@ classdef TBG < handle
             ky = k(2,:)';
             D.kx = kx;
             D.ky = ky;
+            D.fn=@(p) dpoly(p, pv);
             triplot(tri,kx,ky);
             fprintf('# of points: %d\n', length(kx));
             if div == 0
-                D.E = tbg.getDispersion(kx,ky,V);
+                if(saveState)
+                    [D.E, D.P] = tbg.getDispersion(kx,ky,V1,V2);
+                else 
+                    [D.E, ~] = tbg.getDispersion(kx,ky,V1,V2);
+                end
             else
                 i=1;
-                D.E = zeros(length(kx), 4*tbg.N);
+                D.E = double(zeros(length(kx), 4*tbg.N));
+                if(saveState)
+                    D.P = double(zeros(length(kx), 4*tbg.N, 4*tbg.N));
+                end
                 while i<=length(kx)
-                    D.E(i:min(i+div-1,length(kx)), :) = tbg.getDispersion(kx(i:min(i+div-1,length(kx))), ky(i:min(i+div-1,length(kx))), V);
+                    if(saveState)
+                        [D.E(i:min(i+div-1,length(kx)), :),D.P(i:min(i+div-1,length(kx)), :, :)] = tbg.getDispersion(kx(i:min(i+div-1,length(kx))), ky(i:min(i+div-1,length(kx))), V1);
+                    else
+                        [D.E(i:min(i+div-1,length(kx)), :),~] = tbg.getDispersion(kx(i:min(i+div-1,length(kx))), ky(i:min(i+div-1,length(kx))), V1, V2);
+                    end
                     i = i+div;
                     fprintf('%g%% finished\n', max(i,length(kx))/length(kx)*100);
                 end
@@ -170,7 +214,7 @@ classdef TBG < handle
         end
         
         % Get dispersion on high symmetrical points and lines
-        function D=getHighSymmetrical(tbg, res, div, V)
+        function D=getHighSymmetrical(tbg, res, div, V1, V2)
            B1 = tbg.B(:,1);
            B2 = tbg.B(:,2);
            K  = (2/3 * B1 + 1/3 * B2)';
@@ -196,7 +240,7 @@ classdef TBG < handle
            i=1;
            D.E = zeros(size(kx,1), 4*tbg.N);
            while i<=size(kx,1)             
-                D.E(i:min(i+div-1,size(kx,1)), :) = tbg.getDispersion(kx(i:min(i+div-1,size(kx,1))), ky(i:min(i+div-1,size(kx,1))), V);
+                [D.E(i:min(i+div-1,size(kx,1)), :),~] = tbg.getDispersion(kx(i:min(i+div-1,size(kx,1))), ky(i:min(i+div-1,size(kx,1))), V1, V2);
                 i = i + div;
            end
            D.kx = kx;
@@ -345,14 +389,16 @@ classdef TBG < handle
             plot([0; t2(1)], [0; t2(2)], 'g', 'LineWidth', 1.5);
             plot([t1(1); t1(1) + t2(1)], [t1(2); t1(2) + t2(2)], 'g', 'LineWidth', 1.5);
             plot([t2(1); t1(1) + t2(1)], [t2(2); t1(2) + t2(2)], 'g', 'LineWidth', 1.5);
-            scatter3(tbg.c(:,1,1), tbg.c(:,2,1),zeros(tbg.N*2,1),36, 'red');
+            plot([(t1(1)+t2(1))/3; (t1(1)+t2(1))*2/3], [(t1(2)+t2(2))/3; (t1(2)+t2(2))*2/3], 'b', 'LineWidth', 1.5);
+            plot([t1(1); t2(1)], [t1(2); t2(2)], 'b', 'LineWidth', 1.5);
+            scatter3(tbg.c(:,1,1), tbg.c(:,2,1),zeros(tbg.N*2,1),36, 'r^');
             scatter3(tbg.c(:,1,2), tbg.c(:,2,2),repmat(tbg.c0,tbg.N*2,1),36, 'blue');
             hold off;
             
-            %TBG.plotadj(tbg.c(:,:,1),tbg.c(:,:,1),tbg.hintra(:,1),0,'Layer 1 intra');
-            %TBG.plotadj(tbg.c(:,:,2),tbg.c(:,:,2),tbg.hintra(:,2),0,'Layer 2 intra');
-            %TBG.plotadj(tbg.c(:,:,1),tbg.c(:,:,2),tbg.hinter(:,1),1,'Layer 1 -> 2 inter');
-            %TBG.plotadj(tbg.c(:,:,2),tbg.c(:,:,1),tbg.hinter(:,2),1,'Layer 2 -> 1 inter');
+            TBG.plotadj(tbg.c(:,:,1),tbg.c(:,:,1),tbg.hintra(:,1),0,'Layer 1 intra');
+            TBG.plotadj(tbg.c(:,:,2),tbg.c(:,:,2),tbg.hintra(:,2),0,'Layer 2 intra');
+            TBG.plotadj(tbg.c(:,:,1),tbg.c(:,:,2),tbg.hinter(:,1),1,'Layer 1 -> 2 inter');
+            TBG.plotadj(tbg.c(:,:,2),tbg.c(:,:,1),tbg.hinter(:,2),1,'Layer 2 -> 1 inter');
             
             figure
             title 'Brillouin Zone'
