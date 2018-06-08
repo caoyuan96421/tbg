@@ -27,7 +27,7 @@ classdef TBG < handle
     end
     
     methods
-        function tbg = TBG(n, m)
+        function tbg = TBG(n, m, varargin)
             tbg.a0 = 0.142/197;
             tbg.A0 = 4.01*tbg.a0;
             tbg.delta = 0.184*tbg.a0;
@@ -69,10 +69,15 @@ classdef TBG < handle
             tbg.c(:,:,1) = C1*tbg.A'; % Transform back to real coordinates
             tbg.c(:,:,2) = C2*tbg.A';
             
-            calcHopping(tbg);
+            varargin=cell2mat(varargin);
+            if isempty(varargin) || varargin(1)
+                calcHopping(tbg);
+            end
+            
             
             disp('Twisted bilayer graphene initialized');
             disp(['Twist angle: ',num2str(tbg.theta/pi*180),' degrees']);
+            disp(['Superlattice potential period: ',num2str(norm(A1)*197/abs(n-m)),' nm']);
             
         end
         
@@ -81,38 +86,46 @@ classdef TBG < handle
             kx=kx(:);% reshape different k values to the first dimension
             ky=ky(:);
             k=[kx,ky];
-            H=zeros(NK, 4*tbg.N, 4*tbg.N);
+            if V~=0
+                % add external potential
+                H=repmat(shiftdim(diag([repmat(-V/2,2*tbg.N,1);repmat(V/2,2*tbg.N,1)]),-1),NK,1,1);
+            else
+                H=zeros(NK, 4*tbg.N, 4*tbg.N);
+            end
+            H=single(H); % Truncate precision to save memory
             
             % hop: p*2 array (p is number of neighbors). pos: index of
             % current atom. layer: index of current layer (0 or 1)
             function map(hop, pos, layer1, layer2)
                 %H(:, pos+layer1*2*tbg.N, hop(:,1)+layer2*2*tbg.N) = ...
                 %    H(:, pos+layer1*2*tbg.N, hop(:,1)+layer2*2*tbg.N) + reshape(exp(1i*(k*hop(:,3:4)')).*repmat(hop(:,2)',NK,1), NK, 1, []);
-                disp([num2str(pos),',',num2str(layer1),',',num2str(layer2)]);
+                %disp([num2str(pos),',',num2str(layer1),',',num2str(layer2)]);
                 for j=1:size(hop,1)
                     H(:, pos+layer1*2*tbg.N, hop(j,1)+layer2*2*tbg.N) = ...
                         H(:, pos+layer1*2*tbg.N, hop(j,1)+layer2*2*tbg.N) + exp(1i*(k*hop(j,3:4)'))*hop(j,2);
                 end
             end
+            fprintf('Map 1\n');
             cellfun(@map, tbg.hintra(:,1), num2cell((1:2*tbg.N)'), num2cell(zeros(2*tbg.N,1)), num2cell(zeros(2*tbg.N,1))); % Map intralayer hoppings to the upper-left quadrant of the hamiltonian
+            fprintf('Map 2\n');
             cellfun(@map, tbg.hintra(:,2), num2cell((1:2*tbg.N)'), num2cell(ones(2*tbg.N,1)), num2cell(ones(2*tbg.N,1))); % Map intralayer hoppings to the lower-right quadrant of the hamiltonian
-            
+            fprintf('Map 3\n');
             cellfun(@map, tbg.hinter(:,1), num2cell((1:2*tbg.N)'), num2cell(zeros(2*tbg.N,1)), num2cell(ones(2*tbg.N,1))); % Map interlayer hoppings to the upper-right quadrant of the hamiltonian
+            fprintf('Map 4\n');
             cellfun(@map, tbg.hinter(:,2), num2cell((1:2*tbg.N)'), num2cell(ones(2*tbg.N,1)), num2cell(zeros(2*tbg.N,1))); % Map interlayer hoppings to the lower-left quadrant of the hamiltonian
-            
-            for ki=1:NK
-                H(ki,:,:) = H(ki,:,:) + shiftdim(diag([repmat(-V/2,2*tbg.N,1);repmat(V/2,2*tbg.N,1)]),-1);
-            end
+            fprintf('Hermitianize\n');
             H = (H + conj(permute(H,[1,3,2])))/2; % Force H to be hermitian, so that the eigen problem can be solved MUCH FASTER
             %tbg.H0=H;
             disp('Hamiltonian Constructed and Hermitianized');
             % Now we have the Hamiltonian. Solve it! (for each k)
-            E = zeros(NK, 4*tbg.N);
+            E = single(zeros(NK, 4*tbg.N));
             %E = zeros(NK, 20);
             for i=1:NK
-                disp(num2str(i));
+                starttime=datetime;
+                fprintf('%d start...',i);
                 E(i,:) = sort(real(eig(squeeze(H(i,:,:)))));
-                %E(i,:) = sort(real(eigs(sparse(squeeze(H(i,:,:))), 20, 0)));
+                fprintf('ended in');
+                disp(datetime-starttime);
             end
         end
         
@@ -120,30 +133,38 @@ classdef TBG < handle
         function D=getBrillouin(tbg, res, div, V)
             B1 = tbg.B(:,1);
             B2 = tbg.B(:,2);
-            %[px,py] = meshgrid(linspace(0,1,res),linspace(0,1,res));
-            %kx = px * B1(1) + py * B2(1);
-            %ky = px * B1(2) + py * B2(2);
+%             [px,py] = meshgrid(linspace(0,1,res),linspace(0,1,res));
+%             kx = px * B1(1) + py * B2(1);
+%             ky = px * B1(2) + py * B2(2);
+%             D.kx = kx;
+%             D.ky = ky;
+%             D.E = tbg.getDispersion(kx,ky,V);
             K = 2/3 * [1;0] + 1/3 * [-1/2;sqrt(3)/2];
-            [l,t] = meshgrid(linspace(0,1,res).^1.5,linspace(0,pi/3,floor(res/3)));
-            ppx = K(1) - sqrt(3)/6 * l .* tan(t);
-            ppy = K(2) - sqrt(3)/6 * l;
-            pp = unique([ppx(:), ppy(:)],'rows');
-            %scatter(px(:),py(:));
-            T1 = inv([1, -1/2; 0, sqrt(3)/2]);
+            pv=[K,[0;0],[0.5;0],K]';
+            fh=@(p,a) 0.5/res+5/res*(sqrt(sum((p-repmat(K',[size(p,1),1])).^2,2)));
+            [pt,tri]=distmesh2d(@dpoly,fh,0.5/res, [0,0;K'], pv, pv);
+            T1 = [1, -1/2; 0, sqrt(3)/2];
             T2 = [B1, B2];
-            k = T2 * T1 * pp';
+            k = T2 / T1 * pt';
             kx = k(1,:)';
             ky = k(2,:)';
             D.kx = kx;
             D.ky = ky;
-            %E = tbg.getDispersion(kx,ky,V);
-            i=1;
-            D.E = zeros(length(kx), 4*tbg.N);
-            while i<=length(kx)
-                D.E(i:min(i+div-1,length(kx)), :) = tbg.getDispersion(kx(i:min(i+div-1,length(kx))), ky(i:min(i+div-1,length(kx))), V);
-                i = i+div;
+            triplot(tri,kx,ky);
+            fprintf('# of points: %d\n', length(kx));
+            if div == 0
+                D.E = tbg.getDispersion(kx,ky,V);
+            else
+                i=1;
+                D.E = zeros(length(kx), 4*tbg.N);
+                while i<=length(kx)
+                    D.E(i:min(i+div-1,length(kx)), :) = tbg.getDispersion(kx(i:min(i+div-1,length(kx))), ky(i:min(i+div-1,length(kx))), V);
+                    i = i+div;
+                    fprintf('%g%% finished\n', max(i,length(kx))/length(kx)*100);
+                end
             end
             D.B = tbg.B;
+            D.t = tri;
             %D.E = reshape(D.E, length(kx), []);
             plotDispersion(D);
         end

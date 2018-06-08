@@ -13,7 +13,7 @@ Emin = min(min(D.E(:,lowband:highband)));
 Emax = max(max(D.E(:,lowband:highband)));
 Ebin = zeros(res,1);
 deltaE = (Emax - Emin)/(res-1);
-T = delaunay(D.kx, D.ky);
+T = D.t;
 
 for i=1:size(T,1)
     tri=T(i,:);
